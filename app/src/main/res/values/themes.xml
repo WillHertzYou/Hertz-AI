@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Hertz" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/hertz_bg</item>
+        <item name="android:statusBarColor">@color/hertz_bg</item>
+        <item name="android:navigationBarColor">@color/hertz_bg</item>
+    </style>
+</resources>

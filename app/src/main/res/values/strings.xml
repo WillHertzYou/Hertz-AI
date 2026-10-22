@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Hertz</string>
+    <string name="accessibility_label">Hertz agent</string>
+    <string name="accessibility_description">Lets Hertz read what is on your screen, tap buttons, type, scroll, and show its floating overlay. The AI runs on this phone; it only goes online when you ask it to search or open a web page.</string>
+</resources>
