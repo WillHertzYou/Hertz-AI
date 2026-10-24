@@ -23,6 +23,21 @@ Hertz's brain, **Gemma 4 E4B**, runs entirely on your phone through Google's Lit
 3. Open the downloaded file and allow "Install unknown apps" for your browser.
 4. To change the code from your phone, edit any file on github.com (pencil icon) and commit. A new APK builds automatically, and it installs over the old one.
 
+## Updating from a version before 0.4.1 (once)
+
+Hertz's signing key changed in 0.4.1, so the new APK can't install over an older one. Uninstall Hertz first, then install the new `Hertz.apk`. Later updates install over it as normal.
+
+Uninstalling deletes the downloaded brain and Hertz's memory. To keep them, ask Hertz **before** uninstalling (it needs All files access, and about 4 GB of free space):
+
+1. "Copy the .litertlm file in /storage/emulated/0/Android/data/com.hertz.ai/files to Download."
+2. "Copy /data/user/0/com.hertz.ai/files/memory.json to Download."
+
+After installing the new version:
+
+1. **Setup → I already have a .litertlm file**, then pick the brain from Download.
+2. Tell Hertz: "Read Download/memory.json and remember each fact in it."
+3. Delete the two copies from Download.
+
 ## First run
 
 1. **Setup → Download brain.** This is 3.7 GB, so use Wi-Fi. It happens once.
