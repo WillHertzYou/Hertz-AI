@@ -51,7 +51,8 @@ object ModelManager {
 
     sealed interface State {
         data object Missing : State
-        data class Downloading(val brain: String, val done: Long, val total: Long) : State
+        /** [note] says why it isn't moving, e.g. waiting for Wi-Fi, or that it's retrying. */
+        data class Downloading(val brain: String, val done: Long, val total: Long, val note: String? = null) : State
         data class Importing(val done: Long, val total: Long) : State
         data object Ready : State
         data class Failed(val reason: String) : State
@@ -84,13 +85,36 @@ object ModelManager {
     fun refresh() {
         if (_state.value is State.Downloading || _state.value is State.Importing) return
         if (Prefs.downloadId >= 0) return
-        _state.value = if (all.any { installed(it) }) State.Ready else State.Missing
+        val anyInstalled = all.any { installed(it) }
+        // Keep a failed download's explanation on screen (Setup refreshes every time it reopens).
+        if (_state.value is State.Failed && !anyInstalled) return
+        _state.value = if (anyInstalled) State.Ready else State.Missing
     }
 
+    /** Automatic restarts left for the current download after a failure that a retry can fix. */
+    private var retriesLeft = 0
+
     fun download(b: Brain) {
+        retriesLeft = 3
+        startDownload(b)
+    }
+
+    private fun startDownload(b: Brain) {
         val dm = app.getSystemService(DownloadManager::class.java)
         if (Prefs.downloadId >= 0) dm.remove(Prefs.downloadId)
         fileOf(b).delete()
+        // Check the space first: otherwise Android only says "Download unsuccessful" after a long wait.
+        val dir = app.getExternalFilesDir(null)
+        val free = dir?.let { runCatching { android.os.StatFs(it.path).availableBytes }.getOrNull() }
+        val needed = (b.gb * (1L shl 30)).toLong() + (300L shl 20)
+        if (free != null && free < needed) {
+            Prefs.downloadId = -1
+            _state.value = State.Failed(
+                "Not enough space: the ${b.title.lowercase()} needs %.1f GB free and the phone has %.1f GB. ".format(needed / 1073741824.0, free / 1073741824.0) +
+                    "Free up some space and tap Get again. If you saved a copy of the brain in Download, use \"I already have a .litertlm file\" instead."
+            )
+            return
+        }
         Prefs.brainId = b.id
         val req = DownloadManager.Request(Uri.parse(b.url))
             .setTitle("Hertz ${b.title.lowercase()} (${b.gb} GB)")
@@ -137,6 +161,7 @@ object ModelManager {
                 val total = c.getLong(c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
                 val reason = c.getInt(c.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
                 c.close()
+                val brain = all.firstOrNull { it.id == Prefs.brainId }
                 when (status) {
                     DownloadManager.STATUS_SUCCESSFUL -> {
                         Prefs.downloadId = -1
@@ -151,14 +176,51 @@ object ModelManager {
                     }
                     DownloadManager.STATUS_FAILED -> {
                         Prefs.downloadId = -1
-                        _state.value = State.Failed("Download failed (code $reason). Try again on Wi-Fi.")
+                        if (brain != null && retryable(reason) && retriesLeft > 0) {
+                            // Dropped connections and server hiccups usually work on a fresh try.
+                            retriesLeft--
+                            _state.value = State.Downloading(name, 0, total, "The download stopped (${failureText(reason)}). Trying again…")
+                            delay(5000)
+                            startDownload(brain)
+                        } else {
+                            _state.value = State.Failed("The download didn't finish: ${failureText(reason)} (code $reason).")
+                        }
                         break
                     }
+                    DownloadManager.STATUS_PAUSED -> _state.value = State.Downloading(name, done, total, pausedText(reason))
                     else -> _state.value = State.Downloading(name, done, total)
                 }
                 delay(1000)
             }
         }
+    }
+
+    private fun retryable(reason: Int) = reason in 500..599 || reason in listOf(
+        DownloadManager.ERROR_HTTP_DATA_ERROR, DownloadManager.ERROR_CANNOT_RESUME,
+        DownloadManager.ERROR_UNHANDLED_HTTP_CODE, DownloadManager.ERROR_TOO_MANY_REDIRECTS, DownloadManager.ERROR_UNKNOWN,
+        408, 429,
+    )
+
+    /** Android's download error codes in plain words, with what to do about them. */
+    private fun failureText(reason: Int): String = when (reason) {
+        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "the phone ran out of space. Free up about 4 GB and tap Get again"
+        DownloadManager.ERROR_HTTP_DATA_ERROR, DownloadManager.ERROR_CANNOT_RESUME ->
+            "the connection kept dropping. Use steady Wi-Fi (turn off any VPN) and keep the phone plugged in"
+        DownloadManager.ERROR_DEVICE_NOT_FOUND -> "the phone's storage wasn't available"
+        DownloadManager.ERROR_FILE_ERROR -> "the file couldn't be saved on the phone. Restart the phone and try again"
+        DownloadManager.ERROR_TOO_MANY_REDIRECTS, DownloadManager.ERROR_UNHANDLED_HTTP_CODE ->
+            "the download server sent something unexpected. Try again in a few minutes"
+        401, 403 -> "the download server refused the request. Try again in a few minutes"
+        404 -> "the brain file wasn't found on the server"
+        in 500..599 -> "the download server had a problem. Try again in a few minutes"
+        else -> "Android stopped the download"
+    }
+
+    private fun pausedText(reason: Int): String? = when (reason) {
+        DownloadManager.PAUSED_WAITING_FOR_NETWORK -> "Paused: waiting for an internet connection."
+        DownloadManager.PAUSED_QUEUED_FOR_WIFI -> "Paused: waiting for Wi-Fi."
+        DownloadManager.PAUSED_WAITING_TO_RETRY -> "Paused: the connection dropped, Android will retry shortly."
+        else -> null
     }
 
     /** Copy a model file the user picked (e.g. downloaded in Chrome) into Hertz's folder. */

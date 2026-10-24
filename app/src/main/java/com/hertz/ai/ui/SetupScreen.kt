@@ -168,6 +168,7 @@ private fun ModelCard() {
                 val frac = if (s.total > 0) s.done.toFloat() / s.total else 0f
                 Text("Downloading ${s.brain.lowercase()}", color = HertzColors.Ink, fontSize = 14.sp)
                 LinearProgressIndicator(progress = { frac }, modifier = Modifier.fillMaxWidth(), color = HertzColors.Cyan, trackColor = HertzColors.Line)
+                s.note?.let { Text(it, color = HertzColors.Warn, fontSize = 13.sp) }
                 Text(
                     "${gb(s.done)} of ${if (s.total > 0) gb(s.total) else "…"}. You can leave the app; it keeps going in the background. " +
                         "Wi-Fi is much faster than mobile data.",
